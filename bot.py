@@ -1,22 +1,25 @@
 import asyncio
 import aiohttp
 import urllib.parse
+import os
+import sys
+import glob
+import argparse
 from ebooklib import epub
 from bs4 import BeautifulSoup
-import argparse
 
 # =========================================================
 # CONFIGURATION & TOKENS
 # =========================================================
-# Custom API Key / Token (Agar aapke paas Google Cloud Translation API, 
-# DeepL, ya kisi custom translation service ka Bearer Token/Key hai to yahan dalein).
-# Agar ise khali ("") chhodenge, to ye FREE Google Engine use karega.
-API_TOKEN = ""  # Example: "AIzaSy..." or "8781074199:AAEH3ijwsacI6nnMevs3DRcUxw4wr7xGro0"
+# Custom API Key / Token (Agar aapke paas Google Cloud Translation API,
+# DeepL, ya kisi custom service ka Bearer Token hai to yahan dalein).
+# Agar ise khali ("") chhodenge, to ye 100% FREE Google Engine use karega.
+API_TOKEN = "8781074199:AAEH3ijwsacI6nnMevs3DRcUxw4wr7xGro0"  
 
 # Default Target Language: 'hi' (Hindi)
 DEFAULT_TARGET_LANG = "hi"
 
-# Maximum Parallel Requests (Speed limit control)
+# Maximum Parallel Requests (Fast speed control)
 MAX_CONCURRENT_REQUESTS = 15
 
 # =========================================================
@@ -31,7 +34,7 @@ async def fetch_translation(session, text, target_lang="hi", api_token=""):
     if not text or not text.strip():
         return text
 
-    # Scenario 1: Using Paid / Custom API Key
+    # Scenario 1: Using Paid / Custom API Token
     if api_token:
         try:
             headers = {
@@ -51,11 +54,11 @@ async def fetch_translation(session, text, target_lang="hi", api_token=""):
         except Exception:
             pass  # Fallback to Free Engine if Token fails
 
-    # Scenario 2: Default Free Unlimited Engine (Fast & No Key Required)
+    # Scenario 2: Default Free Engine (Fast & Unlimited)
     encoded_text = urllib.parse.quote(text)
     url = GOOGLE_FREE_URL.format(target_lang=target_lang, text=encoded_text)
     
-    for attempt in range(3):  # Retry logic for speed and network stability
+    for attempt in range(3):  # Retry logic for network stability
         try:
             async with session.get(url, timeout=10) as response:
                 if response.status == 200:
@@ -71,7 +74,7 @@ async def fetch_translation(session, text, target_lang="hi", api_token=""):
 
 async def translate_html_content(html_content, session, target_lang="hi", token=""):
     """
-    Parses HTML content and translates paragraphs/headings in parallel.
+    Parses HTML content and translates paragraphs/headings concurrently.
     """
     soup = BeautifulSoup(html_content, 'html.parser')
     elements = soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'li', 'span'])
@@ -120,10 +123,31 @@ async def process_epub(input_path, output_path, target_lang="hi", token=""):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fast Async Hindi EPUB Translator")
-    parser.add_argument("-i", "--input", required=True, help="Input EPUB file path")
-    parser.add_argument("-o", "--output", required=True, help="Output EPUB file path")
+    parser.add_argument("-i", "--input", help="Input EPUB file path")
+    parser.add_argument("-o", "--output", help="Output EPUB file path")
     parser.add_argument("-l", "--lang", default=DEFAULT_TARGET_LANG, help="Target language (Default: hi)")
     parser.add_argument("-t", "--token", default=API_TOKEN, help="Optional API Token/Key")
     
     args = parser.parse_args()
-    asyncio.run(process_epub(args.input, args.output, args.lang, args.token))
+    
+    input_file = args.input
+    output_file = args.output
+    
+    # Render Auto-Detect Logic (Command Arguments Nahi Hone Par Bhi Chalega)
+    if not input_file:
+        epubs = glob.glob("*.epub")
+        # Exclude output files if already generated
+        epubs = [f for f in epubs if not f.startswith("translated_")]
+        
+        if epubs:
+            input_file = epubs[0]
+            print(f"[+] Auto-detected EPUB file in directory: {input_file}")
+        else:
+            print("[!] Error: No input `.epub` file found in root folder!")
+            print("[!] Please add an .epub file to your project repository.")
+            sys.exit(1)
+            
+    if not output_file:
+        output_file = f"translated_{input_file}"
+        
+    asyncio.run(process_epub(input_file, output_file, args.lang, args.token))
